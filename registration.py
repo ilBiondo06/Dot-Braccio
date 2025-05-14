@@ -157,6 +157,7 @@ if __name__ == "__main__":
     payload_mode_str = args.payload_mode
     payload_mode_enum = PAYLOAD_MODES[payload_mode_str]
     show_flag = args.show == "show"
+    duration = args. duration
 
     xdpcHandler = XdpcHandler()
 
