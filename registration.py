@@ -1,9 +1,16 @@
+# esempio di esecuzione: python3 registration.py General custom4 10 30 show
+# TODO cosa fare nel caso in cui fallisce la sincronizzazione? solitamente accade quando durante la sincronizzazione un dispositivo ha perso la connessione 
+#      (da quel che ho capito), più aumenta il numero di DOT connessi più è probabile che succeda
+# TODO interfaccia grafica (necessaria?)
+# TODO altri parametri da aggiungere?
+
 import argparse
 import time
 from datetime import datetime
 from xdpchandler import *
+import os
 
-# Mapping stringa → PayloadMode enum
+# Mapping stringa → PayloadMode_enum
 PAYLOAD_MODES = {
     'custom1': movelladot_pc_sdk.XsPayloadMode_CustomMode1,
     'custom2': movelladot_pc_sdk.XsPayloadMode_CustomMode2,
@@ -16,39 +23,38 @@ PAYLOAD_MODES = {
     'orientEul': movelladot_pc_sdk.XsPayloadMode_OrientationEuler,
     'completeEul': movelladot_pc_sdk.XsPayloadMode_CompleteEuler,
     'extEul': movelladot_pc_sdk.XsPayloadMode_ExtendedEuler,
-    'freeAcc': movelladot_pc_sdk.XsPayloadMode_FreeAccelleration,
+    'freeAcc': movelladot_pc_sdk.XsPayloadMode_FreeAcceleration,
     'highFid': movelladot_pc_sdk.XsPayloadMode_HighFidelity,
     'highFidMag': movelladot_pc_sdk.XsPayloadMode_HighFidelitywMag,
-    'dq':  movelladot_pc_sdk.XsPayloadMode_DeltaQuantities,
+    'dq': movelladot_pc_sdk.XsPayloadMode_DeltaQuantities,
     'dqMag': movelladot_pc_sdk.XsPayloadMode_DeltaQuantitieswMag,
     'rq': movelladot_pc_sdk.XsPayloadMode_RateQuantities,
     'rqMag': movelladot_pc_sdk.XsPayloadMode_RateQuantitieswMag,
     'mfm': movelladot_pc_sdk.XsPayloadMode_MFM
-
 }
 
-
+# utilizzo il modulo argparse per parsing dei parametri da linea di comando. Restituisce un oggetto con i parametri
 def parse_args():
     parser = argparse.ArgumentParser(description="Movella DOT Recorder")
     parser.add_argument("filter_profile", choices=["General", "Dynamic"], help="Filter profile to set")
     parser.add_argument("payload_mode", choices=PAYLOAD_MODES.keys(), help="Payload mode (e.g., custom4)")
     parser.add_argument("duration", type=int, help="Duration of recording in seconds")
-    parser.add_argument("output_rate", type=int, help="Output rate in Hz, available values: 1, 4, 10, 12, 15, 20, 30, 60, 120")
-    parser.add_argument("show", nargs='?', default="noshow", choices=["show", "noshow"], help="Show roll, pitch, yaw data in real-time")
+    parser.add_argument("output_rate", type=int, help="Output rate in Hz")
+    parser.add_argument("show", nargs='?', default="noshow", choices=["show", "noshow"], help="Show roll, pitch, yaw in real-time")
     return parser.parse_args()
 
 
 def initialize_and_connect(xdpcHandler):
-    if not xdpcHandler.initialize():
+    if not xdpcHandler.initialize():    # inizializzo xdpcHandler
         print("Initialization failed.")
         return False
 
     xdpcHandler.scanForDots()
-    if len(xdpcHandler.detectedDots()) == 0:
+    if len(xdpcHandler.detectedDots()) == 0: #Esegue la scansione dei dispositivi Movella DOT connessi
         print("No Movella DOT device(s) found.")
         return False
 
-    xdpcHandler.connectDots()
+    xdpcHandler.connectDots()       # Prova a connettersi a quelli trovati
     if len(xdpcHandler.connectedDots()) == 0:
         print("Could not connect to any Movella DOT device(s).")
         return False
@@ -57,37 +63,44 @@ def initialize_and_connect(xdpcHandler):
 
 
 def configure_devices(xdpcHandler, profile, output_rate):
-    for device in xdpcHandler.connectedDots():
-        print(f"\nConfiguring device: {device.deviceTagName()}")
+    log_dir = "logs"
+    os.makedirs(log_dir, exist_ok=True) # Creo una cartella, se non esiste, chiamata logs
 
+    for device in xdpcHandler.connectedDots():
         filterProfiles = device.getAvailableFilterProfiles()
         available_labels = [f.label() for f in filterProfiles]
-        print("Available filter profiles:", ", ".join(available_labels))
+        print("Available filter profiles:", ", ".join(available_labels))    # Mostra i profili di filtro disponibili
+        print(f"\nConfiguring device: {device.deviceTagName()}")
 
-        if device.setOnboardFilterProfile(profile):
+        if device.setOnboardFilterProfile(profile):         # Imposta il filtro scelto
             print(f"Successfully set profile to {profile}")
         else:
             print("Setting filter profile failed!")
 
-        if device.setOutputRate(output_rate):
+        if device.setOutputRate(output_rate):       # imposta il rate di misurazione
             print(f"Successfully set output rate to {output_rate} Hz")
         else:
             print("Setting output rate failed!")
             print("Current output rate:", device.outputRate())
 
+        #TODO controllare se il codice funziona anche senza il setLogOptions
         device.setLogOptions(movelladot_pc_sdk.XsLogOptions_QuaternionAndEuler)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         deviceName = device.deviceTagName().replace(' ', '_')
-        logFileName = f"{deviceName}_{timestamp}.csv"
+        logFileName = os.path.join(log_dir, f"{deviceName}_{timestamp}.csv")          #Crea un nome file .csv per il log basato su nome del dispositivo e timestamp, inserito nella cartella logs
 
         print(f"Enable logging to: {logFileName}")
-        if not device.enableLogging(logFileName):
+        if not device.enableLogging(logFileName):            # Attiva il logging sul dispositivo
             print(f"Failed to enable logging. Reason: {device.lastResultText()}")
 
 
 def synchronize_devices(xdpcHandler):
     manager = xdpcHandler.manager()
     deviceList = xdpcHandler.connectedDots()
+
+    if len(deviceList) <= 1:
+        print("Only one device connected. Skipping synchronization.")
+        return True
 
     print(f"\nStarting sync... Root node: {deviceList[-1].deviceTagName()}")
     print("This takes at least 14 seconds")
@@ -110,38 +123,43 @@ def start_measurement(xdpcHandler, payload_mode):
             print(f"Could not start measurement for {device.deviceTagName()}. Reason: {device.lastResultText()}")
 
 
+def stop_measurement_and_logging(xdpcHandler):
+    for device in xdpcHandler.connectedDots():
+        if not device.stopMeasurement():
+            print(f"Failed to stop measurement for {device.deviceTagName()}")
+        if not device.disableLogging():
+            print(f"Failed to disable logging for {device.deviceTagName()}")
+
+# Mostra in tempo reale (se abilitato) roll, pitch e yaw per ciascun dispositivo
 def show_data(xdpcHandler, duration):
     print(f"\nMain loop. Recording data for {duration} seconds.")
     print("-----------------------------------------")
-    print(" ".join([f"{d.deviceTagName():>42}" for d in xdpcHandler.connectedDots()]))
+    print(" ".join([f"{d.deviceTagName():>21}" for d in xdpcHandler.connectedDots()]))
 
     startTime = movelladot_pc_sdk.XsTimeStamp_nowMs()
     while movelladot_pc_sdk.XsTimeStamp_nowMs() - startTime <= duration * 1000:
         if xdpcHandler.packetsAvailable():
             s = ""
             for device in xdpcHandler.connectedDots():
-                packet = xdpcHandler.getNextPacket(device.portInfo().bluetoothAddress())
+                packet = xdpcHandler.getNextPacket(device.portInfo().bluetoothAddress())        #Per la durata specificata (duration), legge continuamente i pacchetti di dati disponibili
                 if packet.containsOrientation():
                     euler = packet.orientationEuler()
-                    s += f"Roll:{euler.x():7.2f}, Pitch:{euler.y():7.2f}, Yaw:{euler.z():7.2f}| "
+                    s += f"Roll:{euler.x():7.2f}, Pitch:{euler.y():7.2f}, Yaw:{euler.z():7.2f}| "    # I valori sono stampati in una sola riga in aggiornamento continuo (effetto "live")
             print(f"{s}\r", end="", flush=True)
     print("\n-----------------------------------------")
 
 
 def reset_and_cleanup(xdpcHandler):
+    print("\nResetting heading before stopping measurement and logging...")
     for device in xdpcHandler.connectedDots():
-        print(f"\nResetting heading for {device.deviceTagName()}: ", end="")
+        print(f"Resetting heading for {device.deviceTagName()}: ", end="")
         if device.resetOrientation(movelladot_pc_sdk.XRM_DefaultAlignment):
             print("OK")
         else:
             print(f"NOK: {device.lastResultText()}")
 
     print("\nStopping measurement and logging...")
-    for device in xdpcHandler.connectedDots():
-        if not device.stopMeasurement():
-            print(f"Failed to stop measurement for {device.deviceTagName()}")
-        if not device.disableLogging():
-            print(f"Failed to disable logging for {device.deviceTagName()}")
+    stop_measurement_and_logging(xdpcHandler)
 
     print("Stopping sync...")
     if not xdpcHandler.manager().stopSync():
@@ -151,13 +169,47 @@ def reset_and_cleanup(xdpcHandler):
     print("Cleanup complete.")
 
 
+# Permette all’utente di modificare i parametri durante l'esecuzione
+def prompt_for_new_params(current):
+    print("\n--- Modify Parameters ---")
+    print("Press ENTER to keep the current value.")
+
+    new_payload = input(f"Payload mode [{current['payload_mode']}]: ").strip()
+    if new_payload and new_payload in PAYLOAD_MODES:
+        current['payload_mode'] = new_payload
+    elif new_payload:
+        print("Invalid payload. Keeping the current one.")
+
+    try:
+        new_dur = input(f"Duration (s) [{current['duration']}]: ").strip()
+        if new_dur:
+            current['duration'] = int(new_dur)
+    except ValueError:
+        print("Invalid duration. Keeping the current one.")
+
+    try:
+        new_rate = input(f"Output rate (Hz) [{current['output_rate']}]: ").strip()
+        if new_rate:
+            current['output_rate'] = int(new_rate)
+    except ValueError:
+        print("Invalid output rate. Keeping the current one.")
+
+    new_show = input(f"Show data? (show/noshow) [{current['show']}]: ").strip().lower()
+    if new_show in ("show", "noshow"):
+        current['show'] = new_show
+
+    return current
+
+
 if __name__ == "__main__":
     args = parse_args()
 
-    payload_mode_str = args.payload_mode
-    payload_mode_enum = PAYLOAD_MODES[payload_mode_str]
-    show_flag = args.show == "show"
-    duration = args. duration
+    runtime_params = {
+        'payload_mode': args.payload_mode,
+        'duration': args.duration,
+        'output_rate': args.output_rate,
+        'show': args.show,
+    }
 
     xdpcHandler = XdpcHandler()
 
@@ -166,20 +218,33 @@ if __name__ == "__main__":
             xdpcHandler.cleanup()
             exit(-1)
 
-        configure_devices(xdpcHandler, args.filter_profile, args.output_rate)
+        configure_devices(xdpcHandler, args.filter_profile, runtime_params['output_rate'])
 
         if not synchronize_devices(xdpcHandler):
             print("Synchronization failed. You can try again later.")
             xdpcHandler.cleanup()
             exit(-1)
 
-        start_measurement(xdpcHandler, payload_mode_enum)
+        while True:
+            payload_mode_enum = PAYLOAD_MODES[runtime_params['payload_mode']]
+            show_flag = runtime_params['show'] == "show"
 
-        if show_flag:
-            show_data(xdpcHandler, args.duration)
-        else:
-            print(f"Recording silently for {duration} seconds...")
-            time.sleep(duration)
+            start_measurement(xdpcHandler, payload_mode_enum)
+
+            if show_flag:
+                show_data(xdpcHandler, runtime_params['duration'])
+            else:
+                print(f"Recording silently for {runtime_params['duration']} seconds...")
+                time.sleep(runtime_params['duration'])
+
+            stop_measurement_and_logging(xdpcHandler)
+
+            answer = input("\nRepeat measurement (r), modify parameters (m), or quit (q)? [r/m/q]: ").strip().lower()
+            if answer == 'q':
+                break
+            elif answer == 'm':
+                runtime_params = prompt_for_new_params(runtime_params)
+                configure_devices(xdpcHandler, args.filter_profile, runtime_params['output_rate'])
 
     finally:
         reset_and_cleanup(xdpcHandler)
