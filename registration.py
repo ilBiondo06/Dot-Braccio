@@ -134,19 +134,26 @@ def stop_measurement_and_logging(xdpcHandler):
 def show_data(xdpcHandler, duration):
     print(f"\nMain loop. Recording data for {duration} seconds.")
     print("-----------------------------------------")
-    print(" ".join([f"{d.deviceTagName():>21}" for d in xdpcHandler.connectedDots()]))
+
+    # Stampa i nomi centrati sopra ogni colonna di dati
+    names = [d.deviceTagName() for d in xdpcHandler.connectedDots()]
+    name_width = 40
+    header = " ".join([f"{name:^{name_width}}" for name in names])
+    print(header)
 
     startTime = movelladot_pc_sdk.XsTimeStamp_nowMs()
     while movelladot_pc_sdk.XsTimeStamp_nowMs() - startTime <= duration * 1000:
         if xdpcHandler.packetsAvailable():
-            s = ""
+            row = ""
             for device in xdpcHandler.connectedDots():
-                packet = xdpcHandler.getNextPacket(device.portInfo().bluetoothAddress())        #Per la durata specificata (duration), legge continuamente i pacchetti di dati disponibili
+                packet = xdpcHandler.getNextPacket(device.portInfo().bluetoothAddress())
                 if packet.containsOrientation():
                     euler = packet.orientationEuler()
-                    s += f"Roll:{euler.x():7.2f}, Pitch:{euler.y():7.2f}, Yaw:{euler.z():7.2f}| "    # I valori sono stampati in una sola riga in aggiornamento continuo (effetto "live")
-            print(f"{s}\r", end="", flush=True)
+                    formatted = f"Roll: {euler.x():6.2f}, Pitch: {euler.y():6.2f}, Yaw: {euler.z():6.2f}"
+                    row += f"{formatted:^{name_width}}| "
+            print(f"{row}\r", end="", flush=True)
     print("\n-----------------------------------------")
+
 
 
 def reset_and_cleanup(xdpcHandler):
