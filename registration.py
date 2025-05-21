@@ -9,6 +9,7 @@ import time
 from datetime import datetime
 from xdpchandler import *
 import os
+import sys
 
 # Mapping stringa → PayloadMode_enum
 PAYLOAD_MODES = {
@@ -33,7 +34,8 @@ PAYLOAD_MODES = {
     'mfm': movelladot_pc_sdk.XsPayloadMode_MFM
 }
 
-# utilizzo il modulo argparse per parsing dei parametri da linea di comando. Restituisce un oggetto con i parametri
+# utilizzo il modulo argparse per parsing dei parametri da linea di comando
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Movella DOT Recorder")
     parser.add_argument("filter_profile", choices=["General", "Dynamic"], help="Filter profile to set")
@@ -42,6 +44,7 @@ def parse_args():
     parser.add_argument("output_rate", type=int, help="Output rate in Hz")
     parser.add_argument("show", nargs='?', default="noshow", choices=["show", "noshow"], help="Show roll, pitch, yaw in real-time")
     return parser.parse_args()
+
 
 
 def initialize_and_connect(xdpcHandler):
@@ -210,48 +213,61 @@ def prompt_for_new_params(current):
 
 if __name__ == "__main__":
     args = parse_args()
-
     runtime_params = {
         'payload_mode': args.payload_mode,
         'duration': args.duration,
         'output_rate': args.output_rate,
         'show': args.show,
     }
-
     xdpcHandler = XdpcHandler()
-
     try:
         if not initialize_and_connect(xdpcHandler):
             xdpcHandler.cleanup()
             exit(-1)
-
         configure_devices(xdpcHandler, args.filter_profile, runtime_params['output_rate'])
-
         if not synchronize_devices(xdpcHandler):
             print("Synchronization failed. You can try again later.")
             xdpcHandler.cleanup()
             exit(-1)
-
         while True:
             payload_mode_enum = PAYLOAD_MODES[runtime_params['payload_mode']]
             show_flag = runtime_params['show'] == "show"
-
             start_measurement(xdpcHandler, payload_mode_enum)
-
             if show_flag:
                 show_data(xdpcHandler, runtime_params['duration'])
             else:
                 print(f"Recording silently for {runtime_params['duration']} seconds...")
                 time.sleep(runtime_params['duration'])
-
             stop_measurement_and_logging(xdpcHandler)
-
             answer = input("\nRepeat measurement (r), modify parameters (m), or quit (q)? [r/m/q]: ").strip().lower()
             if answer == 'q':
                 break
             elif answer == 'm':
                 runtime_params = prompt_for_new_params(runtime_params)
                 configure_devices(xdpcHandler, args.filter_profile, runtime_params['output_rate'])
-
     finally:
         reset_and_cleanup(xdpcHandler)
+
+# run function for GUI
+
+def run(filter_profile, payload_mode, duration, output_rate, show, output_stream=sys.stdout):
+    import builtins
+    orig_print = builtins.print
+    def gui_print(*args, **kwargs):
+        orig_print(*args, **kwargs, file=output_stream)
+        output_stream.flush()
+    builtins.print = gui_print
+    handler = XdpcHandler()
+    try:
+        if not initialize_and_connect(handler): return
+        configure_devices(handler, filter_profile, output_rate)
+        if not synchronize_devices(handler): return
+        start_measurement(handler, PAYLOAD_MODES[payload_mode])
+        if show:
+            show_data(handler, duration)
+        else:
+            time.sleep(duration)
+        stop_measurement_and_logging(handler)
+    finally:
+        reset_and_cleanup(handler)
+        builtins.print = orig_print
