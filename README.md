@@ -82,15 +82,21 @@ a) if a virtual environment is not created, run this command:
 |------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------|
 | `filter_profile` | `General`, `Dynamic`                                                                                                                                                   | Filter profile to apply                                   |
 | `payload_mode`   | `custom1`, `custom2`, `custom3`, `custom4`, `custom5`,<br>`orientQuat`, `completeQuat`, `extQuat`,<br>`orientEul`, `completeEul`, `extEul`,<br>`freeAcc`,<br>`highFid`, `highFidMag`,<br>`dq`, `dqMag`,<br>`rq`, `rqMag`,<br>`mfm` | Data Payload Mode,                                   |
-| `duration`       | intero ≥ 1                                                                                                                                                              | Durata della registrazione (secondi)                            |
-| `output_rate`    | `1`, `4`, `10`, `12`, `15`, `20`, `30`, `60`, `120`                                                                                                                     | Frequenza di output dei dati (Hz)                              |
-| `show`           | `show`, `noshow`                                                                                                                                                       | Se `show`, stampa roll/pitch/yaw in tempo reale; altrimenti silenzioso |
+| `duration`       | Integer ≥ 1 or omit for indefinite                                                                                                                                      | 	Recording duration (seconds)
+| `output_rate`    | `1`, `4`, `10`, `12`, `15`, `20`, `30`, `60`, `120`                                                                                                                     | Output rate (Hz)
+| `show`           | `show`, `noshow`                                                                                                                                                       | Show orientation (Roll, Pitch, Yaw) in real-time |
 
 ---
 ## EXAMPLES 
-Running the script via command line
+Running the script via command line with finite duration
 
     python3 registration.py <filter_profile> <payload_mode> <duration> <output_rate> [show|noshow]
+
+    python3 registration.py --filter_profile General --payload_mode custom4 --duration 10 --output_rate 30 --show show
+
+Run with indefinite duration (recording stops after pressing ENTER)
+
+    python3 registration.py --filter_profile General --payload_mode custom4 --output_rate 30 --show show
 
 Running the script via GUI
 
@@ -108,12 +114,13 @@ Running the script via GUI
 - Multi-sensor synchronization (automatic retry, skip if only one device is connected)
 - Start and stop the measurement, disable logging at the end
 - Live display of Roll, Pitch and Yaw during recording (`show`)
+- Support for indefinite duration (stop via ENTER in CLI or Stop in GUI)
 - Interactive loop to repeat or change parameters without restarting the script 
 - Heading reset and resource cleaning guaranteed in every condition (try/finally)
 
 ---
 
-## INTERACTIVE MODE
+## INTERACTIVE MODE(CLI ONLY)
 
 during the execution of registration.py script, at the end of each recording cycle, the script prompts the user:
 
