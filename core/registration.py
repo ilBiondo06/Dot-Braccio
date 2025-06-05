@@ -98,7 +98,7 @@ def configure_devices(xdpcHandler, profile, output_rate):
             print("Current output rate:", device.outputRate())
 
         #TODO controllare se il codice funziona anche senza il setLogOptions
-        device.setLogOptions(movelladot_pc_sdk.XsLogOptions_QuaternionAndEuler)
+        #device.setLogOptions(movelladot_pc_sdk.XsLogOptions_QuaternionAndEuler)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         deviceName = device.deviceTagName().replace(' ', '_')
         logFileName = os.path.join(log_dir, f"{deviceName}_{timestamp}.csv")          #Crea un nome file .csv per il log basato su nome del dispositivo e timestamp, inserito nella cartella logs
@@ -156,36 +156,59 @@ def show_data(xdpcHandler, duration):
     start_time_ms = movelladot_pc_sdk.XsTimeStamp_nowMs()
     total_ms = duration * 1000
     progress_bar_length = 40  # lunghezza barra progressi
+    prev_len = 0
 
     while True:
         elapsed_ms = movelladot_pc_sdk.XsTimeStamp_nowMs() - start_time_ms
-        if elapsed_ms > total_ms:
+        if elapsed_ms >= total_ms:
             break
 
-        # Barra di progresso
         progress = elapsed_ms / total_ms
         filled_len = int(progress_bar_length * progress)
-        bar = '=' * filled_len + '-' * (progress_bar_length - filled_len)
-        elapsed_sec = elapsed_ms // 1000
+        bar = "=" * filled_len + "-" * (progress_bar_length - filled_len)
+        elapsed_sec = int(elapsed_ms // 1000)
 
-        # Mostro barra e tempo trascorso
-        sys.stdout.write(f"\rProgress: [{bar}] {elapsed_sec:3d}/{duration} sec ")
-        
-        # Dati orientazione se disponibili
+        # Preparo i dati orientazione in una stringa
+        row = ""
         if xdpcHandler.packetsAvailable():
-            row = ""
             for device in xdpcHandler.connectedDots():
                 packet = xdpcHandler.getNextPacket(device.portInfo().bluetoothAddress())
                 if packet.containsOrientation():
                     euler = packet.orientationEuler()
                     roll, pitch, yaw = euler.x(), euler.y(), euler.z()
                     formatted = f"Roll: {roll:6.2f}, Pitch: {pitch:6.2f}, Yaw: {yaw:6.2f}"
-                    row += f"{formatted:^{name_width}}| "
-            sys.stdout.write(row)
+                    row += f"{formatted} | "
 
-        sys.stdout.flush()
+        # Ora costruisco la riga con i dati prima e la barra dopo
+        line = f"{row}Progress: [{bar}] {elapsed_sec:3d}/{duration} sec"
+        # Se la riga precedente era più lunga, pulisco con spazi extra
+        if prev_len > len(line):
+            line += " " * (prev_len - len(line))
+
+        print(f"\r{line}", end="", flush=True)
+        prev_len = len(line)
         time.sleep(0.1)
+
+    # Alla fine, stampo i dati orientazione liberi (vuoti) e la barra COMPLETA con “DONE”
+    full_bar = "=" * progress_bar_length
+    # Se ci sono ancora pacchetti orientazione da leggere al termine, puoi includerli; altrimenti lascio solo DONE
+    final_orientation = ""
+    if xdpcHandler.packetsAvailable():
+        for device in xdpcHandler.connectedDots():
+            packet = xdpcHandler.getNextPacket(device.portInfo().bluetoothAddress())
+            if packet.containsOrientation():
+                euler = packet.orientationEuler()
+                r, p, y = euler.x(), euler.y(), euler.z()
+                final_orientation += f"Roll: {r:6.2f}, Pitch: {p:6.2f}, Yaw: {y:6.2f} | "
+
+    final_line = f"{final_orientation}Progress: [{full_bar}] {duration:3d}/{duration} sec | DONE"
+    if prev_len > len(final_line):
+        final_line += " " * (prev_len - len(final_line))
+    print(f"\r{final_line}", flush=True)
+
     print("\n-----------------------------------------")
+
+
 
 
 def show_data_indefinite(xdpcHandler):
@@ -203,7 +226,7 @@ def show_data_indefinite(xdpcHandler):
         elapsed_sec = elapsed_ms // 1000
 
         # Mostro tempo trascorso
-        sys.stdout.write(f"\rElapsed time: {elapsed_sec} seconds ")
+        print(f"\rElapsed time: {elapsed_sec} seconds ", end="")
 
         if xdpcHandler.packetsAvailable():
             row = ""
@@ -214,7 +237,7 @@ def show_data_indefinite(xdpcHandler):
                     roll, pitch, yaw = euler.x(), euler.y(), euler.z()
                     formatted = f"Roll: {roll:6.2f}, Pitch: {pitch:6.2f}, Yaw: {yaw:6.2f}"
                     row += f"{formatted:^{name_width}}| "
-            sys.stdout.write(row)
+            print("\r" + row, end="")
 
         sys.stdout.flush()
         time.sleep(0.1)
@@ -357,7 +380,7 @@ if __name__ == "__main__":
         reset_and_cleanup(xdpcHandler)
 
 
-dstop_flag = threading.Event()
+stop_flag = threading.Event()
 
 def run(filter_profile, payload_mode, duration, output_rate, show, output_stream=sys.stdout):
     import builtins
@@ -366,23 +389,29 @@ def run(filter_profile, payload_mode, duration, output_rate, show, output_stream
         orig_print(*args, **kwargs, file=output_stream)
         output_stream.flush()
     builtins.print = gui_print
+
     handler = XdpcHandler()
     try:
         if not initialize_and_connect(handler): return
         configure_devices(handler, filter_profile, output_rate)
         if not synchronize_devices(handler): return
         start_measurement(handler, PAYLOAD_MODES[payload_mode])
+
         if duration is None:
-            while not stop_flag.is_set():
-                if show:
-                    show_data(handler, 1)
-                else:
+            if show:
+                thread = threading.Thread(target=wait_for_enter)
+                thread.start()
+                show_data_indefinite(handler)
+                thread.join()
+            else:
+                while not stop_flag.is_set():
                     time.sleep(1)
         else:
             if show:
                 show_data(handler, duration)
             else:
                 time.sleep(duration)
+
         stop_measurement_and_logging(handler)
     finally:
         reset_and_cleanup(handler)
