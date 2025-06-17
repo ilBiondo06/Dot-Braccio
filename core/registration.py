@@ -1,12 +1,4 @@
 # esempio di esecuzione: python3 registration.py --filter_profile General --payload_mode custom4 --duration 10 --output_rate 30 --show show
-#TODO inserire più messaggi di errore
-#TODO lavorare sul plotting dei dati (ho un po' di domande...)
-#TODO inserire una barra dei progressi nel caso della registrazione con durata
-#TODO inserire quanti secondi sono passati dall' inizio della registrazione nel caso della registrazione senza durata 
-#TODO sistemare l'output dei valori nella gui
-
-#TODO spostare l'invio dei dati al di fuori dello show data
-
 
 import argparse
 import json
@@ -17,6 +9,7 @@ import os
 import sys
 import threading
 from integration_movella import initialize_json, insert_data
+from live_plotter import LivePlotter 
 
 PAYLOAD_MODES = {
     'custom1': movelladot_pc_sdk.XsPayloadMode_CustomMode1,
@@ -97,8 +90,6 @@ def configure_devices(xdpcHandler, profile, output_rate):
             print("Setting output rate failed!")
             print("Current output rate:", device.outputRate())
 
-        #TODO controllare se il codice funziona anche senza il setLogOptions
-        #device.setLogOptions(movelladot_pc_sdk.XsLogOptions_QuaternionAndEuler)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         deviceName = device.deviceTagName().replace(' ', '_')
         logFileName = os.path.join(log_dir, f"{deviceName}_{timestamp}.csv")          #Crea un nome file .csv per il log basato su nome del dispositivo e timestamp, inserito nella cartella logs
@@ -148,6 +139,7 @@ def show_data(xdpcHandler, duration):
     print(f"\nMain loop. Recording data for {duration} seconds.")
     print("-----------------------------------------")
 
+    # Stampa i nomi centrati sopra ogni colonna di dati
     names = [d.deviceTagName() for d in xdpcHandler.connectedDots()]
     name_width = 40
     header = " ".join([f"{name:^{name_width}}" for name in names])
@@ -156,59 +148,36 @@ def show_data(xdpcHandler, duration):
     start_time_ms = movelladot_pc_sdk.XsTimeStamp_nowMs()
     total_ms = duration * 1000
     progress_bar_length = 40  # lunghezza barra progressi
-    prev_len = 0
 
     while True:
         elapsed_ms = movelladot_pc_sdk.XsTimeStamp_nowMs() - start_time_ms
-        if elapsed_ms >= total_ms:
+        if elapsed_ms > total_ms:
             break
 
+        # Barra di progresso
         progress = elapsed_ms / total_ms
         filled_len = int(progress_bar_length * progress)
-        bar = "=" * filled_len + "-" * (progress_bar_length - filled_len)
-        elapsed_sec = int(elapsed_ms // 1000)
+        bar = '=' * filled_len + '-' * (progress_bar_length - filled_len)
+        elapsed_sec = elapsed_ms // 1000
 
-        # Preparo i dati orientazione in una stringa
-        row = ""
+        # Mostro barra e tempo trascorso
+        sys.stdout.write(f"\rProgress: [{bar}] {elapsed_sec:3d}/{duration} sec ")
+        
+        # Dati orientazione se disponibili
         if xdpcHandler.packetsAvailable():
+            row = ""
             for device in xdpcHandler.connectedDots():
                 packet = xdpcHandler.getNextPacket(device.portInfo().bluetoothAddress())
                 if packet.containsOrientation():
                     euler = packet.orientationEuler()
                     roll, pitch, yaw = euler.x(), euler.y(), euler.z()
                     formatted = f"Roll: {roll:6.2f}, Pitch: {pitch:6.2f}, Yaw: {yaw:6.2f}"
-                    row += f"{formatted} | "
+                    row += f"{formatted:^{name_width}}| "
+            sys.stdout.write(row)
 
-        # Ora costruisco la riga con i dati prima e la barra dopo
-        line = f"{row}Progress: [{bar}] {elapsed_sec:3d}/{duration} sec"
-        # Se la riga precedente era più lunga, pulisco con spazi extra
-        if prev_len > len(line):
-            line += " " * (prev_len - len(line))
-
-        print(f"\r{line}", end="", flush=True)
-        prev_len = len(line)
+        sys.stdout.flush()
         time.sleep(0.1)
-
-    # Alla fine, stampo i dati orientazione liberi (vuoti) e la barra COMPLETA con “DONE”
-    full_bar = "=" * progress_bar_length
-    # Se ci sono ancora pacchetti orientazione da leggere al termine, puoi includerli; altrimenti lascio solo DONE
-    final_orientation = ""
-    if xdpcHandler.packetsAvailable():
-        for device in xdpcHandler.connectedDots():
-            packet = xdpcHandler.getNextPacket(device.portInfo().bluetoothAddress())
-            if packet.containsOrientation():
-                euler = packet.orientationEuler()
-                r, p, y = euler.x(), euler.y(), euler.z()
-                final_orientation += f"Roll: {r:6.2f}, Pitch: {p:6.2f}, Yaw: {y:6.2f} | "
-
-    final_line = f"{final_orientation}Progress: [{full_bar}] {duration:3d}/{duration} sec | DONE"
-    if prev_len > len(final_line):
-        final_line += " " * (prev_len - len(final_line))
-    print(f"\r{final_line}", flush=True)
-
     print("\n-----------------------------------------")
-
-
 
 
 def show_data_indefinite(xdpcHandler):
@@ -226,7 +195,7 @@ def show_data_indefinite(xdpcHandler):
         elapsed_sec = elapsed_ms // 1000
 
         # Mostro tempo trascorso
-        print(f"\rElapsed time: {elapsed_sec} seconds ", end="")
+        sys.stdout.write(f"\rElapsed time: {elapsed_sec} seconds ")
 
         if xdpcHandler.packetsAvailable():
             row = ""
@@ -237,12 +206,12 @@ def show_data_indefinite(xdpcHandler):
                     roll, pitch, yaw = euler.x(), euler.y(), euler.z()
                     formatted = f"Roll: {roll:6.2f}, Pitch: {pitch:6.2f}, Yaw: {yaw:6.2f}"
                     row += f"{formatted:^{name_width}}| "
-            print("\r" + row, end="")
+                    
+            sys.stdout.write(row)
 
         sys.stdout.flush()
         time.sleep(0.1)
     print("\n-----------------------------------------")
-
 
 
 def reset_and_cleanup(xdpcHandler):
@@ -311,15 +280,6 @@ if __name__ == "__main__":
         'output_rate': args.output_rate,
         'show': args.show,
     }
-    """concat_id=""
-
-    #MODIFICARE QUI
-    json_data = initialize_json(
-        token="my_token",  # Sostituire con valori reali
-        id_="user_id",
-        device="device_name",
-        model="DOT"
-    )"""
     
     xdpcHandler = XdpcHandler()
     try:
@@ -355,7 +315,6 @@ if __name__ == "__main__":
                 if show_flag:
                     show_data(xdpcHandler, runtime_params['duration'])
                 else:
-                    # Barra di progresso durante la registrazione silenziosa
                     start_time = time.time()
                     duration = runtime_params['duration']
                     bar_len = 40
@@ -379,8 +338,6 @@ if __name__ == "__main__":
     finally:
         reset_and_cleanup(xdpcHandler)
 
-
-stop_flag = threading.Event()
 
 def run(filter_profile, payload_mode, duration, output_rate, show, output_stream=sys.stdout):
     import builtins
