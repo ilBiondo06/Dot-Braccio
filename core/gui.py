@@ -66,10 +66,11 @@ class App(tk.Tk):
     def _build(self):
         frm = ttk.Frame(self, padding=10)
         frm.grid(row=0, column=0, sticky="nsew")
-        for i in range(5):
+        for i in range(9):
             frm.grid_rowconfigure(i, weight=0)
-        frm.grid_rowconfigure(5, weight=1)
-        frm.grid_columnconfigure(1, weight=1)
+        frm.grid_rowconfigure(9, weight=1)
+        for col in range(3):
+            frm.grid_columnconfigure(col, weight=1)
 
         # ==== Row 0: Filter Profile ====
         ttk.Label(frm, text="Filter Profile").grid(row=0, column=0, sticky="w")
@@ -95,20 +96,24 @@ class App(tk.Tk):
         self.rate.grid(row=3, column=1, sticky="ew")
         self.rate.set("30")
 
-        # ==== Row 4: Live Display Checkbox ====
+        # ==== Row 4: Live Display + Sending Checkbox ====
         self.show = tk.BooleanVar(value=True)
-        ttk.Checkbutton(frm, text="Live Display", variable=self.show).grid(
-            row=4, column=0, columnspan=2, sticky="w"
-        )
+        ttk.Checkbutton(frm, text="Live Display", variable=self.show
+        ).grid(row=4, column=0, sticky="w")
+
         self.send_flag = tk.BooleanVar(value=True)
-        ttk.Checkbutton(frm, text="Send Flag", variable=self.send_flag).grid(
-            row=4, column=1, columnspan=2, sticky="w"
-        )
+        ttk.Checkbutton(frm, text="Send to Server", variable=self.send_flag
+        ).grid(row=4, column=1, sticky="w")
+
+        # ==== Row 5: Synchronize Checkbox ====
+        self.sync_flag = tk.BooleanVar(value=True)
+        ttk.Checkbutton(frm, text="Synchronize", variable=self.sync_flag
+        ).grid(row=5, column=0, sticky="w")
 
         # ==== Row 6: Pulsanti Start/Stop + Label + Progressbar + Log ====
         # Frame interno per pulsanti
         btn_frame = ttk.Frame(frm)
-        btn_frame.grid(row=5, column=0, columnspan=2, pady=(10, 5), sticky="ew")
+        btn_frame.grid(row=6, column=0, columnspan=2, pady=(10, 5), sticky="ew")
         btn_frame.grid_columnconfigure(0, weight=1)
         btn_frame.grid_columnconfigure(1, weight=1)
 
@@ -119,17 +124,17 @@ class App(tk.Tk):
 
         # Label che mostra Roll/Pitch/Yaw (una riga)
         self.status_lbl = ttk.Label(frm, text="—", font=("Courier", 10))
-        self.status_lbl.grid(row=6, column=0, columnspan=2, sticky="ew", pady=(5,0))
+        self.status_lbl.grid(row=7, column=0, columnspan=2, sticky="ew", pady=(5,0))
 
         # Progressbar
         self.progress_var = tk.IntVar(value=0)
         self.progress = ttk.Progressbar(frm, orient="horizontal", mode="determinate",
                                         maximum=100, variable=self.progress_var)
-        self.progress.grid(row=7, column=0, columnspan=2, sticky="ew", pady=(2,5))
+        self.progress.grid(row=8, column=0, columnspan=2, sticky="ew", pady=(2,5))
 
         # ScrolledText per eventuali messaggi di log generici
         self.log_testo = tk.Text(frm, height=12, state="disabled")
-        self.log_testo.grid(row=8, column=0, columnspan=2, sticky="nsew")
+        self.log_testo.grid(row=9, column=0, columnspan=2, sticky="nsew")
 
     def start(self):
         self.start_btn.config(state="disabled")
@@ -156,6 +161,8 @@ class App(tk.Tk):
             dur_val,
             int(self.rate.get()),
             self.show.get(),
+            self.send_flag.get(),
+            self.sync_flag.get(),
             Stream()
         )
         stop_flag.clear()

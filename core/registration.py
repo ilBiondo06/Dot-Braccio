@@ -1,7 +1,6 @@
 # esempio di esecuzione: python3 registration.py --filter_profile General --payload_mode custom4 --duration 10 --output_rate 30 --show show
 #TODO inserire il send al server anche in show data
-#TODO sistemare start-stop-start
-#TODO le print non vengono reindirizzate allo Scrolltext
+#TODO sistemare start-stop-start (non vede i movella dopo)
 #TODO inserire la possibilità di decidere se salvare un csv con l'eventuale cambio di nome
 #TODO implementare live plot
 
@@ -169,7 +168,7 @@ def show_data(xdpcHandler, duration):
         sys.stdout.flush()
 
         # Mostro barra e tempo trascorso
-        sys.stdout.write(f"\rProgress: [{bar}] {elapsed_sec:3d}/{duration} sec ")
+        sys.stdout.write(f"\rProgress: [{bar}] {elapsed_sec:3.0f}/{duration} sec ")
         
         # Dati orientazione se disponibili
         if xdpcHandler.packetsAvailable():
@@ -195,16 +194,16 @@ def send_post_data(stop_event, json_queue):
         try:
             data = json_queue.get(timeout=0.01)  # Attende dati dalla coda
             url = "http://193.205.129.120:63435/publish/sensor_movella"
-            print("Invio POST al server...")
+            print("Sending POST to Server...")
             response = requests.post(url, json=data, headers={"Content-Type": "application/json"})
             print("Status code:", response.status_code)
-            print("Risposta dal server:", response.text)
-            print(f"Aspetta di chiudere l'app. la coda non è vuota. Elementi rimasti:{json_queue.qsize()}")
+            print("Server response:", response.text)
+            print(f"Wait to close the app. The queue is not empty. Items left:{json_queue.qsize()}")
         except queue.Empty:
             continue
         except Exception as e:
             print(f"Errore nell'invio dei dati: {e}")
-    print("Coda vuota. Puoi chiudere l'applicativo se vuoi.")
+    print("Now the queue is empty. You can close the application if you want.")
 
 def show_data_indefinite(xdpcHandler, send_flag):
     print("\nMain loop. Recording data indefinitely. Press ENTER to stop.")
@@ -525,10 +524,11 @@ if __name__ == "__main__":
         reset_and_cleanup(xdpcHandler)
 
 
-def run(filter_profile, payload_mode, duration, output_rate, show, send_flag, output_stream=sys.stdout):
+def run(filter_profile, payload_mode, duration, output_rate, show, send_flag, synch_flag, output_stream=sys.stdout):
     import builtins
     orig_print = builtins.print
     def gui_print(*args, **kwargs):
+        kwargs.pop('file', None)
         orig_print(*args, **kwargs, file=output_stream)
         output_stream.flush()
     builtins.print = gui_print
@@ -537,7 +537,11 @@ def run(filter_profile, payload_mode, duration, output_rate, show, send_flag, ou
     try:
         if not initialize_and_connect(handler): return
         configure_devices(handler, filter_profile, output_rate)
-        if not synchronize_devices(handler): return
+        if synch_flag:
+            if not synchronize_devices(handler):
+                return
+        else:
+            print("Synchronization skipped by user request.")
         start_measurement(handler, PAYLOAD_MODES[payload_mode])
 
         if duration is None:
