@@ -1,4 +1,9 @@
 # esempio di esecuzione: python3 registration.py --filter_profile General --payload_mode custom4 --duration 10 --output_rate 30 --show show
+#TODO inserire il send al server anche in show data
+#TODO sistemare start-stop-start
+#TODO le print non vengono reindirizzate allo Scrolltext
+#TODO inserire la possibilità di decidere se salvare un csv con l'eventuale cambio di nome
+#TODO implementare live plot
 
 import argparse
 import json
@@ -8,8 +13,10 @@ from xdpchandler import *
 import os
 import sys
 import threading
-from integration_movella import initialize_json, insert_data
 from live_plotter import LivePlotter 
+import requests
+import csv
+import queue
 
 PAYLOAD_MODES = {
     'custom1': movelladot_pc_sdk.XsPayloadMode_CustomMode1,
@@ -158,7 +165,8 @@ def show_data(xdpcHandler, duration):
         progress = elapsed_ms / total_ms
         filled_len = int(progress_bar_length * progress)
         bar = '=' * filled_len + '-' * (progress_bar_length - filled_len)
-        elapsed_sec = elapsed_ms // 1000
+        elapsed_sec = elapsed_ms / 1000
+        sys.stdout.flush()
 
         # Mostro barra e tempo trascorso
         sys.stdout.write(f"\rProgress: [{bar}] {elapsed_sec:3d}/{duration} sec ")
@@ -179,38 +187,216 @@ def show_data(xdpcHandler, duration):
         time.sleep(0.1)
     print("\n-----------------------------------------")
 
+stop_event = threading.Event()
+json_queue = queue.Queue()
 
-def show_data_indefinite(xdpcHandler):
+def send_post_data(stop_event, json_queue):
+    while not stop_event.is_set() or not json_queue.empty():
+        try:
+            data = json_queue.get(timeout=0.01)  # Attende dati dalla coda
+            url = "http://193.205.129.120:63435/publish/sensor_movella"
+            print("Invio POST al server...")
+            response = requests.post(url, json=data, headers={"Content-Type": "application/json"})
+            print("Status code:", response.status_code)
+            print("Risposta dal server:", response.text)
+            print(f"Aspetta di chiudere l'app. la coda non è vuota. Elementi rimasti:{json_queue.qsize()}")
+        except queue.Empty:
+            continue
+        except Exception as e:
+            print(f"Errore nell'invio dei dati: {e}")
+    print("Coda vuota. Puoi chiudere l'applicativo se vuoi.")
+
+def show_data_indefinite(xdpcHandler, send_flag):
     print("\nMain loop. Recording data indefinitely. Press ENTER to stop.")
     print("-----------------------------------------")
-    names = [d.deviceTagName() for d in xdpcHandler.connectedDots()]
+    names = [d.deviceTagName()[8:8+4] for d in xdpcHandler.connectedDots()]
+    names.sort()
     name_width = 40
     header = " ".join([f"{name:^{name_width}}" for name in names])
     print(header)
 
+    id_all = ""
+    for name_pos in range(len(names)-1):
+        id_all+=names[name_pos]+"|"
+    id_all +=names[len(names)-1]
+
     start_time_ms = movelladot_pc_sdk.XsTimeStamp_nowMs()
+    
+    upper_bound =  180
+    lower_bound = -180
+    
+    values_in_json_sended_to_IoE_Server = {
+        "Identifier": {
+            "id": id_all,
+            "device": "Sensor",
+            "model": "Movella Xsens Dot"
+        },
+        "MovellaData":{
+            "timestamp":time.time(),
+            "DOT0":{"roll":0,"pitch":0,"yaw":0,"range":{"upper_bound": upper_bound, "lower_bound":lower_bound}},
+            "DOT1":{"roll":0,"pitch":0,"yaw":0,"range":{"upper_bound": upper_bound, "lower_bound":lower_bound}},
+            "DOT2":{"roll":0,"pitch":0,"yaw":0,"range":{"upper_bound": upper_bound, "lower_bound":lower_bound}},
+            "DOT3":{"roll":0,"pitch":0,"yaw":0,"range":{"upper_bound": upper_bound, "lower_bound":lower_bound}},
+            "DOT4":{"roll":0,"pitch":0,"yaw":0,"range":{"upper_bound": upper_bound, "lower_bound":lower_bound}}
+        }
+    }
+    
+    if send_flag:
+        t = threading.Thread(target=send_post_data, args=(stop_event, json_queue))
+        t.daemon = True  # il thread si chiude quando il main thread termina
+        t.start()
+
+        t2= threading.Thread(target=send_post_data, args=(stop_event, json_queue))
+        t2.daemon = True  # il thread si chiude quando il main thread termina
+        t2.start()
+
+        t3= threading.Thread(target=send_post_data, args=(stop_event, json_queue))
+        t3.daemon = True  # il thread si chiude quando il main thread termina
+        t3.start()
 
     while not stop_flag.is_set():
         elapsed_ms = movelladot_pc_sdk.XsTimeStamp_nowMs() - start_time_ms
-        elapsed_sec = elapsed_ms // 1000
+        elapsed_sec = elapsed_ms / 1000
+        sys.stdout.flush()
 
         # Mostro tempo trascorso
         sys.stdout.write(f"\rElapsed time: {elapsed_sec} seconds ")
 
         if xdpcHandler.packetsAvailable():
+
             row = ""
             for device in xdpcHandler.connectedDots():
                 packet = xdpcHandler.getNextPacket(device.portInfo().bluetoothAddress())
+                name = device.deviceTagName()[8:8+4]
                 if packet.containsOrientation():
                     euler = packet.orientationEuler()
                     roll, pitch, yaw = euler.x(), euler.y(), euler.z()
                     formatted = f"Roll: {roll:6.2f}, Pitch: {pitch:6.2f}, Yaw: {yaw:6.2f}"
                     row += f"{formatted:^{name_width}}| "
-                    
+                    values_in_json_sended_to_IoE_Server["MovellaData"][name]["roll"]=roll
+                    values_in_json_sended_to_IoE_Server["MovellaData"][name]["pitch"]=pitch
+                    values_in_json_sended_to_IoE_Server["MovellaData"][name]["yaw"]=yaw
+
             sys.stdout.write(row)
+
+            values_in_json_sended_to_IoE_Server["MovellaData"]["timestamp"]=time.time()
+            if send_flag:
+                json_queue.put(values_in_json_sended_to_IoE_Server.copy())
+
 
         sys.stdout.flush()
         time.sleep(0.1)
+
+    if send_flag:
+        stop_event.set()
+        t.join()
+        t2.join()
+        t3.join()
+    
+    print("\n-----------------------------------------")
+
+def sample_data_for_json(xdpcHandler):  # <-- Json used to train a FCNN (Fully Connected Neural Network).
+    print("\nMain loop. Recording data indefinitely. Press ENTER to stop.")
+    print("-----------------------------------------")
+    names = [d.deviceTagName()[8:8+4] for d in xdpcHandler.connectedDots()]
+    names.sort()
+    name_width = 40
+    header = " ".join([f"{name:^{name_width}}" for name in names])
+    print(header)
+
+    id_all = ""
+    for name_pos in range(len(names)-1):
+        id_all+=names[name_pos]+"|"
+    id_all +=names[len(names)-1]
+
+    start_time_ms = movelladot_pc_sdk.XsTimeStamp_nowMs()
+    
+    row_in_csv = []
+
+    upper_bound =  180
+    lower_bound = -180
+    
+    values_in_json_sended_to_IoE_Server = {
+        "Identifier": {
+            "id": id_all,
+            "device": "Sensor",
+            "model": "Movella Xsens Dot"
+        },
+        "MovellaData":{
+            "timestamp":time.time(),
+            "DOT0":{"roll":0,"pitch":0,"yaw":0,"range":{"upper_bound": upper_bound, "lower_bound":lower_bound}},
+            "DOT1":{"roll":0,"pitch":0,"yaw":0,"range":{"upper_bound": upper_bound, "lower_bound":lower_bound}},
+            "DOT2":{"roll":0,"pitch":0,"yaw":0,"range":{"upper_bound": upper_bound, "lower_bound":lower_bound}},
+            "DOT3":{"roll":0,"pitch":0,"yaw":0,"range":{"upper_bound": upper_bound, "lower_bound":lower_bound}},
+            "DOT4":{"roll":0,"pitch":0,"yaw":0,"range":{"upper_bound": upper_bound, "lower_bound":lower_bound}}
+        }
+    }
+
+    """t = threading.Thread(target=send_post_data, args=(stop_event, json_queue))
+    t.daemon = True  # il thread si chiude quando il main thread termina
+    t.start()"""
+
+    while not stop_flag.is_set():
+        elapsed_ms = movelladot_pc_sdk.XsTimeStamp_nowMs() - start_time_ms
+        elapsed_sec = elapsed_ms / 1000
+        sys.stdout.flush()
+
+        # Mostro tempo trascorso
+        sys.stdout.write(f"\rElapsed time: {elapsed_sec} seconds ")
+
+        if xdpcHandler.packetsAvailable():
+            limit = 20000
+            values = [0,0,0,  0,0,0,  50]
+
+            row = ""
+            for device in xdpcHandler.connectedDots():
+                packet = xdpcHandler.getNextPacket(device.portInfo().bluetoothAddress())
+                name = device.deviceTagName()[8:8+4]
+                if packet.containsOrientation():
+                    euler = packet.orientationEuler()
+                    roll, pitch, yaw = euler.x(), euler.y(), euler.z()
+                    formatted = f"Roll: {roll:6.2f}, Pitch: {pitch:6.2f}, Yaw: {yaw:6.2f}"
+                    row += f"{formatted:^{name_width}}| "
+                    if "DOT3" in name:
+                        values[0]=roll
+                        values[1]=pitch
+                        values[2]=yaw
+                    elif "DOT2" in name: #device.deviceTagName():
+                        values[3]=roll
+                        values[4]=pitch
+                        values[5]=yaw
+                    values_in_json_sended_to_IoE_Server["MovellaData"][name]["roll"]=roll
+                    values_in_json_sended_to_IoE_Server["MovellaData"][name]["pitch"]=pitch
+                    values_in_json_sended_to_IoE_Server["MovellaData"][name]["yaw"]=yaw
+
+                    
+            row = row + "  | "+ str(len(row_in_csv))+"/"+str(limit) +"|  "+ str(len(row_in_csv)*100/limit)+"%"
+            if len(row_in_csv) > limit:
+                break
+            sys.stdout.write(row)
+            row_in_csv.append(values)
+
+            values_in_json_sended_to_IoE_Server["MovellaData"]["timestamp"]=time.time()
+            # URL del server a cui inviare i dati
+            print("prima della post")
+            """url = "http://193.205.129.120:63435/publish/sensor_movella"
+            # Invio del JSON con POST
+            response = requests.post(url, json=values_in_json_sended_to_IoE_Server, headers={"Content-Type": "application/json"})"""
+            #json_queue.put(values_in_json_sended_to_IoE_Server.copy())
+            print("dopo la post")
+            # Controllo della risposta
+
+        sys.stdout.flush()
+        time.sleep(0.1)
+
+    with open('dati_open_gabriele.csv',mode='w',newline='') as file:
+        writer = csv.writer(file)
+        writer.writerows(row_in_csv)
+
+    """stop_event.set()
+    t.join()"""
+    
+    
     print("\n-----------------------------------------")
 
 
@@ -308,7 +494,7 @@ if __name__ == "__main__":
                     while not stop_flag.is_set():
                         elapsed = int(time.time() - start_time)
                         print(f"\rElapsed time: {elapsed} seconds", end="", flush=True)
-                        time.sleep(1)
+                        time.sleep(0.1)
                     print()
                 thread.join()
             else:
@@ -339,7 +525,7 @@ if __name__ == "__main__":
         reset_and_cleanup(xdpcHandler)
 
 
-def run(filter_profile, payload_mode, duration, output_rate, show, output_stream=sys.stdout):
+def run(filter_profile, payload_mode, duration, output_rate, show, send_flag, output_stream=sys.stdout):
     import builtins
     orig_print = builtins.print
     def gui_print(*args, **kwargs):
@@ -358,7 +544,7 @@ def run(filter_profile, payload_mode, duration, output_rate, show, output_stream
             if show:
                 thread = threading.Thread(target=wait_for_enter)
                 thread.start()
-                show_data_indefinite(handler)
+                show_data_indefinite(handler,send_flag)
                 thread.join()
             else:
                 while not stop_flag.is_set():

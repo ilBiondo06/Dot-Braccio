@@ -100,16 +100,20 @@ class App(tk.Tk):
         ttk.Checkbutton(frm, text="Live Display", variable=self.show).grid(
             row=4, column=0, columnspan=2, sticky="w"
         )
+        self.send_flag = tk.BooleanVar(value=True)
+        ttk.Checkbutton(frm, text="Send Flag", variable=self.send_flag).grid(
+            row=4, column=1, columnspan=2, sticky="w"
+        )
 
-        # ==== Row 5: Pulsanti Start/Stop + Label + Progressbar + Log ====
+        # ==== Row 6: Pulsanti Start/Stop + Label + Progressbar + Log ====
         # Frame interno per pulsanti
         btn_frame = ttk.Frame(frm)
         btn_frame.grid(row=5, column=0, columnspan=2, pady=(10, 5), sticky="ew")
         btn_frame.grid_columnconfigure(0, weight=1)
         btn_frame.grid_columnconfigure(1, weight=1)
 
-        self.btn = ttk.Button(btn_frame, text="Start", command=self.start)
-        self.btn.grid(row=0, column=0, sticky="ew", padx=(0,5))
+        self.start_btn = ttk.Button(btn_frame, text="Start", command=self.start)
+        self.start_btn.grid(row=0, column=0, sticky="ew", padx=(0,5))
         self.stop_btn = ttk.Button(btn_frame, text="Stop", command=self.stop, state="disabled")
         self.stop_btn.grid(row=0, column=1, sticky="ew", padx=(5,0))
 
@@ -124,11 +128,11 @@ class App(tk.Tk):
         self.progress.grid(row=7, column=0, columnspan=2, sticky="ew", pady=(2,5))
 
         # ScrolledText per eventuali messaggi di log generici
-        self.log_testo = tk.Text(frm, height=8, state="disabled")
+        self.log_testo = tk.Text(frm, height=12, state="disabled")
         self.log_testo.grid(row=8, column=0, columnspan=2, sticky="nsew")
 
     def start(self):
-        self.btn.config(state="disabled")
+        self.start_btn.config(state="disabled")
         self.stop_btn.config(state="normal")
         # Pulisce log_testo e status_lbl/progress
         self.log_testo.configure(state="normal")
@@ -161,13 +165,14 @@ class App(tk.Tk):
     def stop(self):
         stop_flag.set()
         self.stop_btn.config(state="disabled")
+        self.start_btn.config(state="normal")
 
     def _run(self, *args):
         try:
             run(*args)
         finally:
             # Quando termina, ripristino i bottoni
-            self.btn.config(state="normal")
+            self.start_btn.config(state="normal")
             self.stop_btn.config(state="disabled")
 
 if __name__ == "__main__":
