@@ -1,9 +1,8 @@
 # esempio di esecuzione: python3 registration.py --filter_profile General --payload_mode custom4 --duration 10 --output_rate 30 --show show
 #TODO inserire il send al server anche in show data
 #TODO sistemare start-stop-start (non vede i movella dopo)
-#TODO inserire la possibilità di decidere se salvare un csv con l'eventuale cambio di nome
 #TODO implementare live plot
-#TODO elapsed time e i valori vengono stampati su terminale e non su Gui
+#TODO elapsed time viene stampato su terminale e non su Gui
 
 import argparse
 import json
@@ -108,11 +107,7 @@ def configure_devices(xdpcHandler, profile, output_rate, save_csv=True, filename
             if not device.enableLogging(logFileName):
                 print(f"Failed to enable logging. Reason: {device.lastResultText()}")
         else:
-            print("CSV logging disabled by user.")        
-
-        print(f"Enable logging to: {logFileName}")
-        if not device.enableLogging(logFileName):            # Attiva il logging sul dispositivo
-            print(f"Failed to enable logging. Reason: {device.lastResultText()}")
+            print("CSV logging disabled by user.")
 
 
 def synchronize_devices(xdpcHandler):
@@ -153,13 +148,15 @@ def stop_measurement_and_logging(xdpcHandler):
 
 def show_data(xdpcHandler, duration):
     print(f"\nMain loop. Recording data for {duration} seconds.")
-    print("-----------------------------------------")
+
+
+    # Ottieni i nomi dei sensori
+    names = [d.deviceTagName()[8:12] for d in xdpcHandler.connectedDots()]
+    # Stampa la riga speciale per la GUI
+    print(f"SENSOR_LIST:{','.join(names)}")
 
     # Stampa i nomi centrati sopra ogni colonna di dati
     names = [d.deviceTagName() for d in xdpcHandler.connectedDots()]
-    name_width = 40
-    header = " ".join([f"{name:^{name_width}}" for name in names])
-    print(header)
 
     start_time_ms = movelladot_pc_sdk.XsTimeStamp_nowMs()
     total_ms = duration * 1000
@@ -182,19 +179,16 @@ def show_data(xdpcHandler, duration):
         
         # Dati orientazione se disponibili
         if xdpcHandler.packetsAvailable():
-            row = ""
             for device in xdpcHandler.connectedDots():
                 packet = xdpcHandler.getNextPacket(device.portInfo().bluetoothAddress())
+                name = device.deviceTagName()[8:12]  # oppure il nome che usi in SENSOR_LIST
                 if packet.containsOrientation():
                     euler = packet.orientationEuler()
                     roll, pitch, yaw = euler.x(), euler.y(), euler.z()
-                    formatted = f"Roll: {roll:6.2f}, Pitch: {pitch:6.2f}, Yaw: {yaw:6.2f}"
-                    row += f"{formatted:^{name_width}}| "
-            sys.stdout.write(row)
+                    print(f"{name}: Roll: {roll:.2f}, Pitch: {pitch:.2f}, Yaw: {yaw:.2f}")
 
         sys.stdout.flush()
         time.sleep(0.1)
-    print("\n-----------------------------------------")
 
 stop_event = threading.Event()
 json_queue = queue.Queue()
@@ -216,13 +210,12 @@ def send_post_data(stop_event, json_queue):
     print("Now the queue is empty. You can close the application if you want.")
 
 def show_data_indefinite(xdpcHandler, send_flag):
-    print("\nMain loop. Recording data indefinitely. Press ENTER to stop.")
-    print("-----------------------------------------")
-    names = [d.deviceTagName()[8:8+4] for d in xdpcHandler.connectedDots()]
+    print("\nMain loop. Recording data indefinitely. Press the stop button on the GUI to stop.")
+    names = [d.deviceTagName()[8:12] for d in xdpcHandler.connectedDots()]
+    # Stampa la riga speciale per la GUI
+    print(f"SENSOR_LIST:{','.join(names)}")
+
     names.sort()
-    name_width = 40
-    header = " ".join([f"{name:^{name_width}}" for name in names])
-    print(header)
 
     id_all = ""
     for name_pos in range(len(names)-1):
@@ -266,27 +259,25 @@ def show_data_indefinite(xdpcHandler, send_flag):
     while not stop_flag.is_set():
         elapsed_ms = movelladot_pc_sdk.XsTimeStamp_nowMs() - start_time_ms
         elapsed_sec = elapsed_ms / 1000
-        sys.stdout.flush()
+        
 
         # Mostro tempo trascorso
         sys.stdout.write(f"\rElapsed time: {elapsed_sec} seconds ")
+        sys.stdout.flush()
 
         if xdpcHandler.packetsAvailable():
 
-            row = ""
             for device in xdpcHandler.connectedDots():
                 packet = xdpcHandler.getNextPacket(device.portInfo().bluetoothAddress())
-                name = device.deviceTagName()[8:8+4]
+                name = device.deviceTagName()[8:12] 
                 if packet.containsOrientation():
                     euler = packet.orientationEuler()
                     roll, pitch, yaw = euler.x(), euler.y(), euler.z()
-                    formatted = f"Roll: {roll:6.2f}, Pitch: {pitch:6.2f}, Yaw: {yaw:6.2f}"
-                    row += f"{formatted:^{name_width}}| "
+                    print(f"{name}: Roll: {roll:.2f}, Pitch: {pitch:.2f}, Yaw: {yaw:.2f}")
                     values_in_json_sended_to_IoE_Server["MovellaData"][name]["roll"]=roll
                     values_in_json_sended_to_IoE_Server["MovellaData"][name]["pitch"]=pitch
                     values_in_json_sended_to_IoE_Server["MovellaData"][name]["yaw"]=yaw
 
-            sys.stdout.write(row)
 
             values_in_json_sended_to_IoE_Server["MovellaData"]["timestamp"]=time.time()
             if send_flag:
@@ -302,16 +293,11 @@ def show_data_indefinite(xdpcHandler, send_flag):
         t2.join()
         t3.join()
     
-    print("\n-----------------------------------------")
 
 def sample_data_for_json(xdpcHandler):  # <-- Json used to train a FCNN (Fully Connected Neural Network).
     print("\nMain loop. Recording data indefinitely. Press ENTER to stop.")
-    print("-----------------------------------------")
     names = [d.deviceTagName()[8:8+4] for d in xdpcHandler.connectedDots()]
     names.sort()
-    name_width = 40
-    header = " ".join([f"{name:^{name_width}}" for name in names])
-    print(header)
 
     id_all = ""
     for name_pos in range(len(names)-1):
@@ -351,7 +337,7 @@ def sample_data_for_json(xdpcHandler):  # <-- Json used to train a FCNN (Fully C
         sys.stdout.flush()
 
         # Mostro tempo trascorso
-        sys.stdout.write(f"\rElapsed time: {elapsed_sec} seconds ")
+        #sys.stdout.write(f"\rElapsed time: {elapsed_sec} seconds ")
 
         if xdpcHandler.packetsAvailable():
             limit = 20000
@@ -382,18 +368,15 @@ def sample_data_for_json(xdpcHandler):  # <-- Json used to train a FCNN (Fully C
             row = row + "  | "+ str(len(row_in_csv))+"/"+str(limit) +"|  "+ str(len(row_in_csv)*100/limit)+"%"
             if len(row_in_csv) > limit:
                 break
-            sys.stdout.write(row)
+            #sys.stdout.write(row)
             row_in_csv.append(values)
 
             values_in_json_sended_to_IoE_Server["MovellaData"]["timestamp"]=time.time()
             # URL del server a cui inviare i dati
-            print("prima della post")
             """url = "http://193.205.129.120:63435/publish/sensor_movella"
             # Invio del JSON con POST
             response = requests.post(url, json=values_in_json_sended_to_IoE_Server, headers={"Content-Type": "application/json"})"""
             #json_queue.put(values_in_json_sended_to_IoE_Server.copy())
-            print("dopo la post")
-            # Controllo della risposta
 
         sys.stdout.flush()
         time.sleep(0.1)
@@ -405,8 +388,6 @@ def sample_data_for_json(xdpcHandler):  # <-- Json used to train a FCNN (Fully C
     """stop_event.set()
     t.join()"""
     
-    
-    print("\n-----------------------------------------")
 
 
 def reset_and_cleanup(xdpcHandler):
@@ -462,10 +443,6 @@ def prompt_for_new_params(current):
 
 
 stop_flag = threading.Event()
-
-def wait_for_enter():
-    input("\nPress ENTER to stop measurement...")
-    stop_flag.set()
 
 if __name__ == "__main__":
     args = parse_args()
@@ -556,10 +533,7 @@ def run(filter_profile, payload_mode, duration, output_rate, show, send_flag, sy
 
         if duration is None:
             if show:
-                thread = threading.Thread(target=wait_for_enter)
-                thread.start()
                 show_data_indefinite(handler,send_flag)
-                thread.join()
             else:
                 while not stop_flag.is_set():
                     time.sleep(1)

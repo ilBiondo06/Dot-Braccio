@@ -11,8 +11,9 @@ class App(tk.Tk):
         self.title("Movella DOT Recorder GUI")
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(0, weight=1)
+        self.sensor_labels = {} # Dizionario per le label dei sensori
 
-        # Qui mettiamo una coda per i messaggi di stato
+        # Coda per i messaggi di stato
         self.log_queue = queue.Queue()
         self._build()
         self._poll_log_queue()
@@ -27,6 +28,21 @@ class App(tk.Tk):
         """
         while not self.log_queue.empty():
             txt = self.log_queue.get_nowait().strip()
+
+            #intercetta la lista sensori
+            if txt.startswith("SENSOR_LIST:"):
+                names_str = txt.split(":", 1)[1].strip()
+                names = [n.strip() for n in names_str.split(",") if n.strip()]
+                self.create_sensor_label(names)
+                continue
+
+            # Parsing valori sensori (es: DOT3: Roll: 12.34, Pitch: 56.78, Yaw: 90.12)
+            m = re.match(r"([A-Za-z0-9_]+):\s*Roll:\s*([-\d.]+),\s*Pitch:\s*([-\d.]+),\s*Yaw:\s*([-\d.]+)", txt)
+            if m:
+                nome, roll, pitch, yaw = m.group(1), float(m.group(2)), float(m.group(3)), float(m.group(4))
+                self.update_sensors_value(nome, roll, pitch, yaw)
+                continue  # Non aggiungere questa riga al log
+
             if "Progress:" in txt:
                 m = re.search(
                     r"^(?P<orient>.*)\|\s*Progress:\s*\[(?P<bar>[=\-]+)\]\s*(?P<elapsed>\d+)/(?P<dur>\d+)\s*sec.*", 
@@ -60,9 +76,9 @@ class App(tk.Tk):
     def _build(self):
         frm = ttk.Frame(self, padding=10)
         frm.grid(row=0, column=0, sticky="nsew")
-        for i in range(10):
+        for i in range(11):
             frm.grid_rowconfigure(i, weight=0)
-        frm.grid_rowconfigure(10, weight=1)
+        frm.grid_rowconfigure(11, weight=1)
         for col in range(3):
             frm.grid_columnconfigure(col, weight=1)
 
@@ -126,9 +142,9 @@ class App(tk.Tk):
         self.stop_btn = ttk.Button(btn_frame, text="Stop", command=self.stop, state="disabled")
         self.stop_btn.grid(row=0, column=1, sticky="ew", padx=(5,0))
 
-        # Label che mostra Roll/Pitch/Yaw (una riga)
-        self.status_lbl = ttk.Label(frm, text="—", font=("Courier", 10))
-        self.status_lbl.grid(row=8, column=0, columnspan=2, sticky="ew", pady=(5,0))
+        # Sensor Values (initially empty)
+        self.sensors_frame = ttk.Frame(frm)
+        self.sensors_frame.grid(row=8, column=0, columnspan=2, sticky="ew", pady=(10, 5))
 
         # Progressbar
         self.progress_var = tk.IntVar(value=0)
@@ -136,9 +152,29 @@ class App(tk.Tk):
                                         maximum=100, variable=self.progress_var)
         self.progress.grid(row=9, column=0, columnspan=2, sticky="ew", pady=(2,5))
 
+        #Status Label
+        self.status_lbl = ttk.Label(frm, text="—")
+        self.status_lbl.grid(row=10, column=0, columnspan=2, sticky="ew")
+
         # ScrolledText per eventuali messaggi di log generici
         self.log_testo = tk.Text(frm, height=12, state="disabled")
-        self.log_testo.grid(row=10, column=0, columnspan=2, sticky="nsew")
+        self.log_testo.grid(row=11, column=0, columnspan=2, sticky="nsew")
+
+    def create_sensor_label(self, names):
+        # Rimuovi vecchie label
+        for lbl in self.sensor_labels.values():
+            lbl.destroy()
+        self.sensor_labels.clear()
+        for i, name in enumerate(names):
+            lbl = ttk.Label(self.sensors_frame, text=f"{name}: Roll=--- Pitch=--- Yaw=---", font=("Courier", 11))
+            lbl.grid(row=i, column=0, sticky="w")
+            self.sensor_labels[name] = lbl
+
+    def update_sensors_value(self, nome, roll, pitch, yaw):
+        if nome in self.sensor_labels:
+            self.sensor_labels[nome].config(
+                text=f"{nome}: Roll={roll:6.2f} Pitch={pitch:6.2f} Yaw={yaw:6.2f}"
+            )
 
     def _toggle_filename(self):
             if self.save_csv.get():
