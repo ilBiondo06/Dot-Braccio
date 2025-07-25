@@ -3,6 +3,7 @@
 #TODO sistemare start-stop-start (non vede i movella dopo)
 #TODO inserire la possibilità di decidere se salvare un csv con l'eventuale cambio di nome
 #TODO implementare live plot
+#TODO elapsed time e i valori vengono stampati su terminale e non su Gui
 
 import argparse
 import json
@@ -68,7 +69,7 @@ def initialize_and_connect(xdpcHandler):
     return True
 
 
-def configure_devices(xdpcHandler, profile, output_rate):
+def configure_devices(xdpcHandler, profile, output_rate, save_csv=True, filename=None):
     log_dir = "logs"
     os.makedirs(log_dir, exist_ok=True) # Creo una cartella, se non esiste, chiamata logs
     
@@ -98,7 +99,16 @@ def configure_devices(xdpcHandler, profile, output_rate):
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         deviceName = device.deviceTagName().replace(' ', '_')
-        logFileName = os.path.join(log_dir, f"{deviceName}_{timestamp}.csv")          #Crea un nome file .csv per il log basato su nome del dispositivo e timestamp, inserito nella cartella logs
+        if save_csv:
+            if filename:
+                logFileName = os.path.join(log_dir, f"{filename}_{deviceName}.csv")
+            else:
+                logFileName = os.path.join(log_dir, f"{deviceName}_{timestamp}.csv")
+            print(f"Enable logging to: {logFileName}")
+            if not device.enableLogging(logFileName):
+                print(f"Failed to enable logging. Reason: {device.lastResultText()}")
+        else:
+            print("CSV logging disabled by user.")        
 
         print(f"Enable logging to: {logFileName}")
         if not device.enableLogging(logFileName):            # Attiva il logging sul dispositivo
@@ -524,7 +534,7 @@ if __name__ == "__main__":
         reset_and_cleanup(xdpcHandler)
 
 
-def run(filter_profile, payload_mode, duration, output_rate, show, send_flag, synch_flag, output_stream=sys.stdout):
+def run(filter_profile, payload_mode, duration, output_rate, show, send_flag, synch_flag, save_csv=True, filename=None, output_stream=sys.stdout):
     import builtins
     orig_print = builtins.print
     def gui_print(*args, **kwargs):
@@ -536,7 +546,7 @@ def run(filter_profile, payload_mode, duration, output_rate, show, send_flag, sy
     handler = XdpcHandler()
     try:
         if not initialize_and_connect(handler): return
-        configure_devices(handler, filter_profile, output_rate)
+        configure_devices(handler, filter_profile, output_rate, save_csv, filename)
         if synch_flag:
             if not synchronize_devices(handler):
                 return
