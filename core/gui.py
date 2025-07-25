@@ -27,13 +27,7 @@ class App(tk.Tk):
         """
         while not self.log_queue.empty():
             txt = self.log_queue.get_nowait().strip()
-
-            # Se è una riga contenente "Progress:" la parsifichiamo
             if "Progress:" in txt:
-                # Regex per catturare le parti:
-                #   (tutto ciò che precede "Progress:[")  => orientazione
-                #   dentro parentesi quadre => barra (non serve parse)
-                #   poi (\d+)/(\d+) => elapsed/duration
                 m = re.search(
                     r"^(?P<orient>.*)\|\s*Progress:\s*\[(?P<bar>[=\-]+)\]\s*(?P<elapsed>\d+)/(?P<dur>\d+)\s*sec.*", 
                     txt
@@ -66,9 +60,9 @@ class App(tk.Tk):
     def _build(self):
         frm = ttk.Frame(self, padding=10)
         frm.grid(row=0, column=0, sticky="nsew")
-        for i in range(9):
+        for i in range(10):
             frm.grid_rowconfigure(i, weight=0)
-        frm.grid_rowconfigure(9, weight=1)
+        frm.grid_rowconfigure(10, weight=1)
         for col in range(3):
             frm.grid_columnconfigure(col, weight=1)
 
@@ -96,24 +90,34 @@ class App(tk.Tk):
         self.rate.grid(row=3, column=1, sticky="ew")
         self.rate.set("30")
 
-        # ==== Row 4: Live Display + Sending Checkbox ====
+        # ==== Row 4: Save on CSV + File Name ====
+        self.save_csv = tk.BooleanVar(value=True)
+        ttk.Checkbutton(frm, text="Save on CSV", variable=self.save_csv, command=self._toggle_filename
+        ).grid(row=4, column=0, sticky="w")
+
+        self.filename_entry = ttk.Entry(frm)
+        self.filename_entry.grid(row=4, column=1, sticky="ew")
+        self.filename_entry.insert(0, "")  # vuoto = nome di default
+        self.filename_entry.config(state="normal" if self.save_csv.get() else "disabled")
+
+        # ==== Row 5: Live Display + Sending Checkbox ====
         self.show = tk.BooleanVar(value=True)
         ttk.Checkbutton(frm, text="Live Display", variable=self.show
-        ).grid(row=4, column=0, sticky="w")
+        ).grid(row=5, column=0, sticky="w")
 
         self.send_flag = tk.BooleanVar(value=True)
         ttk.Checkbutton(frm, text="Send to Server", variable=self.send_flag
-        ).grid(row=4, column=1, sticky="w")
+        ).grid(row=5, column=1, sticky="w")
 
-        # ==== Row 5: Synchronize Checkbox ====
+        # ==== Row 6: Synchronize Checkbox ====
         self.sync_flag = tk.BooleanVar(value=True)
         ttk.Checkbutton(frm, text="Synchronize", variable=self.sync_flag
-        ).grid(row=5, column=0, sticky="w")
+        ).grid(row=6, column=0, sticky="w")
 
-        # ==== Row 6: Pulsanti Start/Stop + Label + Progressbar + Log ====
+        # ==== Row 7: Pulsanti Start/Stop + Label + Progressbar + Log ====
         # Frame interno per pulsanti
         btn_frame = ttk.Frame(frm)
-        btn_frame.grid(row=6, column=0, columnspan=2, pady=(10, 5), sticky="ew")
+        btn_frame.grid(row=7, column=0, columnspan=2, pady=(10, 5), sticky="ew")
         btn_frame.grid_columnconfigure(0, weight=1)
         btn_frame.grid_columnconfigure(1, weight=1)
 
@@ -124,17 +128,23 @@ class App(tk.Tk):
 
         # Label che mostra Roll/Pitch/Yaw (una riga)
         self.status_lbl = ttk.Label(frm, text="—", font=("Courier", 10))
-        self.status_lbl.grid(row=7, column=0, columnspan=2, sticky="ew", pady=(5,0))
+        self.status_lbl.grid(row=8, column=0, columnspan=2, sticky="ew", pady=(5,0))
 
         # Progressbar
         self.progress_var = tk.IntVar(value=0)
         self.progress = ttk.Progressbar(frm, orient="horizontal", mode="determinate",
                                         maximum=100, variable=self.progress_var)
-        self.progress.grid(row=8, column=0, columnspan=2, sticky="ew", pady=(2,5))
+        self.progress.grid(row=9, column=0, columnspan=2, sticky="ew", pady=(2,5))
 
         # ScrolledText per eventuali messaggi di log generici
         self.log_testo = tk.Text(frm, height=12, state="disabled")
-        self.log_testo.grid(row=9, column=0, columnspan=2, sticky="nsew")
+        self.log_testo.grid(row=10, column=0, columnspan=2, sticky="nsew")
+
+    def _toggle_filename(self):
+            if self.save_csv.get():
+                self.filename_entry.config(state="normal")
+            else:
+                self.filename_entry.config(state="disabled")
 
     def start(self):
         self.start_btn.config(state="disabled")
@@ -155,6 +165,9 @@ class App(tk.Tk):
         dur_text = self.dur.get().strip()
         dur_val = int(dur_text) if dur_text else None
 
+        save_csv_val = self.save_csv.get()
+        filename_val = self.filename_entry.get().strip() or None
+
         args = (
             self.filt.get(),
             self.mode.get(),
@@ -163,6 +176,8 @@ class App(tk.Tk):
             self.show.get(),
             self.send_flag.get(),
             self.sync_flag.get(),
+            save_csv_val,    
+            filename_val,    
             Stream()
         )
         stop_flag.clear()

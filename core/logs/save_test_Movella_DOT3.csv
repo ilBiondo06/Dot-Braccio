@@ -1,0 +1,5 @@
+DeviceTag: Movella DOT3,FirmwareVersion: 3.0.0,AppVersion: 2023.6.0,SyncStatus: Unknown (Synced/Un-synced),OutputRate: 30,FilterProfile: Unknown,Measurement Mode: Custom Modes - Custom Mode 4,StartTime: 2025-07-25 13:15:57.681,© Movella Technologies B.V. 2005-2025
+SampleTimeFine,dq_W,dq_X,dq_Y,dq_Z,dv[1],dv[2],dv[3],Acc_X,Acc_Y,Acc_Z,Gyr_X,Gyr_Y,Gyr_Z,Mag_X,Mag_Y,Mag_Z,Quat_W,Quat_X,Quat_Y,Quat_Z,Status
+3453519,1.0000,-0.0002,-0.0001,-0.0001,0.0014,0.0001,0.1581,-nan,-nan,-nan,-inf,-inf,-inf,0.3752,0.4934,-1.0745,0.9510,0.0037,-0.0070,0.3090,0
+3453852
+3454185
