@@ -2,7 +2,6 @@
 #TODO inserire il send al server anche in show data
 #TODO sistemare start-stop-start (non vede i movella dopo)
 #TODO implementare live plot
-#TODO elapsed time viene stampato su terminale e non su Gui
 
 import argparse
 import json
@@ -164,18 +163,25 @@ def show_data(xdpcHandler, duration):
 
     while True:
         elapsed_ms = movelladot_pc_sdk.XsTimeStamp_nowMs() - start_time_ms
-        if elapsed_ms > total_ms:
+        # forzo a non oltrepassare il totale
+        if elapsed_ms >= total_ms:
+            elapsed_ms = total_ms
+            elapsed_sec = total_ms / 1000.0
+            # barra COMPLETA
+            bar = '=' * progress_bar_length
+            # stampo un ultimo update
+            print(f"\rProgress: [{bar}] {elapsed_sec:4.1f}/{duration:.1f} sec")
+            print(f"\nElapsed time: {elapsed_sec:.1f} seconds")
             break
 
-        # Barra di progresso
+        # altrimenti stampa normale
         progress = elapsed_ms / total_ms
         filled_len = int(progress_bar_length * progress)
         bar = '=' * filled_len + '-' * (progress_bar_length - filled_len)
-        elapsed_sec = elapsed_ms / 1000
-        sys.stdout.flush()
-
-        # Mostro barra e tempo trascorso
-        sys.stdout.write(f"\rProgress: [{bar}] {elapsed_sec:3.0f}/{duration} sec ")
+        elapsed_sec = elapsed_ms / 1000.0
+        print(f"\rProgress: [{bar}] {elapsed_sec:4.1f}/{duration:.1f} sec")
+        print(f"\nElapsed time: {elapsed_sec:.1f} seconds")
+        
         
         # Dati orientazione se disponibili
         if xdpcHandler.packetsAvailable():
@@ -262,9 +268,7 @@ def show_data_indefinite(xdpcHandler, send_flag):
         
 
         # Mostro tempo trascorso
-        sys.stdout.write(f"\rElapsed time: {elapsed_sec} seconds ")
-        sys.stdout.flush()
-
+        print(f"Elapsed time: {elapsed_sec:.1f} seconds", end="\r", flush=True)
         if xdpcHandler.packetsAvailable():
 
             for device in xdpcHandler.connectedDots():

@@ -36,34 +36,30 @@ class App(tk.Tk):
                 self.create_sensor_label(names)
                 continue
 
+            # intercetta il tempo trascorso
+            if txt.startswith("Elapsed time:"):
+                # Estrae il tempo trascorso in secondi
+                m = re.search(r"Elapsed time:\s*([\d.]+)\s*seconds", txt)
+                if m:
+                    elapsed_sec = float(m.group(1))
+                    self.elapsed_lbl.config(text=f"Elapsed: {elapsed_sec:.1f}s")
+                continue
+
             # Parsing valori sensori (es: DOT3: Roll: 12.34, Pitch: 56.78, Yaw: 90.12)
             m = re.match(r"([A-Za-z0-9_]+):\s*Roll:\s*([-\d.]+),\s*Pitch:\s*([-\d.]+),\s*Yaw:\s*([-\d.]+)", txt)
             if m:
                 nome, roll, pitch, yaw = m.group(1), float(m.group(2)), float(m.group(3)), float(m.group(4))
                 self.update_sensors_value(nome, roll, pitch, yaw)
                 continue  # Non aggiungere questa riga al log
-
-            if "Progress:" in txt:
-                m = re.search(
-                    r"^(?P<orient>.*)\|\s*Progress:\s*\[(?P<bar>[=\-]+)\]\s*(?P<elapsed>\d+)/(?P<dur>\d+)\s*sec.*", 
-                    txt
-                )
+            
+            # Parsing della barra di progresso e stato
+            if txt.startswith("Progress:"):
+                m = re.search(r"Progress:\s*\[([=\-]+)\]\s*([\d.]+)/([\d.]+)\s*sec", txt)
                 if m:
-                    orient = m.group("orient").strip()
-                    elapsed = int(m.group("elapsed"))
-                    dur = int(m.group("dur"))
-                    # Calcolo percentuale
+                    elapsed, dur = float(m.group(2)), float(m.group(3))
                     percent = int((elapsed / dur) * 100)
-                    # Aggiorna la Label col testo di orientazione (o indicatore "DONE")
-                    if "DONE" in txt:
-                        self.status_lbl.config(text=orient + " | DONE")
-                        self.progress_var.set(100)
-                    else:
-                        self.status_lbl.config(text=orient)
-                        self.progress_var.set(percent)
-                else:
-                    # Un altro formato (es. "Recording stopped by user.")
-                    self.status_lbl.config(text=txt)
+                    self.progress_var.set(percent)
+                continue
             else:
                 # Qualunque altra linea (es. messaggi di connessione) la appendiamo su log_testo
                 self.log_testo.configure(state="normal")
@@ -76,89 +72,93 @@ class App(tk.Tk):
     def _build(self):
         frm = ttk.Frame(self, padding=10)
         frm.grid(row=0, column=0, sticky="nsew")
-        for i in range(11):
-            frm.grid_rowconfigure(i, weight=0)
-        frm.grid_rowconfigure(11, weight=1)
-        for col in range(3):
-            frm.grid_columnconfigure(col, weight=1)
+        for r in range(7):
+            frm.rowconfigure(r, weight=0)
+        frm.rowconfigure(7, weight=1)
+        for c in range(2):
+            frm.columnconfigure(c, weight=1)
 
-        # ==== Row 0: Filter Profile ====
-        ttk.Label(frm, text="Filter Profile").grid(row=0, column=0, sticky="w")
-        self.filt = ttk.Combobox(frm, values=["General", "Dynamic"])
-        self.filt.grid(row=0, column=1, sticky="ew")
+        # — Area 1: Parametri di registrazione —
+        param_frame = ttk.LabelFrame(frm, text="Registration Parameters", padding=8)
+        param_frame.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0,5))
+        param_frame.columnconfigure( 0, weight=1)
+        param_frame.columnconfigure( 1, weight=1)
+
+
+        ttk.Label(param_frame, text="Filter Profile").grid(row=0, column=0, sticky="w", padx=5, pady=2)
+        self.filt = ttk.Combobox(param_frame, values=["General","Dynamic"])
+        self.filt.grid(row=0, column=1, sticky="ew", padx=5, pady=2)
         self.filt.set("General")
 
-        # ==== Row 1: Payload Mode ====
-        ttk.Label(frm, text="Payload Mode").grid(row=1, column=0, sticky="w")
-        self.mode = ttk.Combobox(frm, values=list(PAYLOAD_MODES.keys()))
-        self.mode.grid(row=1, column=1, sticky="ew")
+        ttk.Label(param_frame, text="Payload Mode").grid(row=1, column=0, sticky="w", padx=5, pady=2)
+        self.mode = ttk.Combobox(param_frame, values=list(PAYLOAD_MODES.keys()))
+        self.mode.grid(row=1, column=1, sticky="ew", padx=5, pady=2)
         self.mode.set("custom4")
 
-        # ==== Row 2: Duration ====
-        ttk.Label(frm, text="Duration (s, blank=indefinite)").grid(row=2, column=0, sticky="w")
-        self.dur = ttk.Entry(frm)
-        self.dur.grid(row=2, column=1, sticky="ew")
+        ttk.Label(param_frame, text="Duration (s)").grid(row=2, column=0, sticky="w", padx=5, pady=2)
+        self.dur = ttk.Entry(param_frame)
+        self.dur.grid(row=2, column=1, sticky="ew", padx=5, pady=2)
 
-        # ==== Row 3: Rate ====
-        ttk.Label(frm, text="Rate (Hz)").grid(row=3, column=0, sticky="w")
-        allowed_rates = ["1", "4", "10", "12", "15", "20", "30", "60", "120"]
-        self.rate = ttk.Combobox(frm, values=allowed_rates)
-        self.rate.grid(row=3, column=1, sticky="ew")
+        ttk.Label(param_frame, text="Rate (Hz)").grid(row=3, column=0, sticky="w", padx=5, pady=2)
+        self.rate = ttk.Combobox(param_frame, values=["1","4","10","12","15","20","30","60","120"])
+        self.rate.grid(row=3, column=1, sticky="ew", padx=5, pady=2)
         self.rate.set("30")
 
-        # ==== Row 4: Save on CSV + File Name ====
-        self.save_csv = tk.BooleanVar(value=True)
-        ttk.Checkbutton(frm, text="Save on CSV", variable=self.save_csv, command=self._toggle_filename
-        ).grid(row=4, column=0, sticky="w")
+        # — Area 2: Opzioni di run —
+        options_frame = ttk.LabelFrame(frm, text="Run Options", padding=8)
+        options_frame.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0,5))
+        options_frame.columnconfigure(0, weight=1)
+        options_frame.columnconfigure(1, weight=1)
+        options_frame.columnconfigure(2, weight=1)
 
-        self.filename_entry = ttk.Entry(frm)
-        self.filename_entry.grid(row=4, column=1, sticky="ew")
-        self.filename_entry.insert(0, "")  # vuoto = nome di default
-        self.filename_entry.config(state="normal" if self.save_csv.get() else "disabled")
+        self.save_csv   = tk.BooleanVar(value=False)
+        ttk.Checkbutton(options_frame, text="Save on CSV", variable=self.save_csv, command=self._toggle_filename).grid(row=0, column=0, sticky="w", padx=5)
 
-        # ==== Row 5: Live Display + Sending Checkbox ====
+        self.send_flag  = tk.BooleanVar(value=False)
+        ttk.Checkbutton(options_frame, text="Send to Server", variable=self.send_flag).grid(row=1, column=0, sticky="w", padx=5)
+
+        self.sync_flag  = tk.BooleanVar(value=False)
+        ttk.Checkbutton(options_frame, text="Synchronize", variable=self.sync_flag).grid(row=1, column=1, sticky="w", padx=5)
+
         self.show = tk.BooleanVar(value=True)
-        ttk.Checkbutton(frm, text="Live Display", variable=self.show
-        ).grid(row=5, column=0, sticky="w")
+        ttk.Checkbutton(options_frame, text="Live Display", variable=self.show).grid(row=2, column=0, sticky="w", padx=5)
 
-        self.send_flag = tk.BooleanVar(value=True)
-        ttk.Checkbutton(frm, text="Send to Server", variable=self.send_flag
-        ).grid(row=5, column=1, sticky="w")
+        # abilitare/disabilitare il campo filename
+        self.filename_entry = ttk.Entry(options_frame)
+        self.filename_entry.grid(row=0, column=1, columnspan=3, sticky="ew", padx=5, pady=(2,5))
+        self.filename_entry.config(state="disabled")
 
-        # ==== Row 6: Synchronize Checkbox ====
-        self.sync_flag = tk.BooleanVar(value=True)
-        ttk.Checkbutton(frm, text="Synchronize", variable=self.sync_flag
-        ).grid(row=6, column=0, sticky="w")
+        # — Area 3: Controlli e progresso —
+        ctrl_frame = ttk.LabelFrame(frm, text="Registration Control", padding=8)
+        ctrl_frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0,5))
+        ctrl_frame.columnconfigure((0,1), weight=1)
 
-        # ==== Row 7: Pulsanti Start/Stop + Label + Progressbar + Log ====
-        # Frame interno per pulsanti
-        btn_frame = ttk.Frame(frm)
-        btn_frame.grid(row=7, column=0, columnspan=2, pady=(10, 5), sticky="ew")
-        btn_frame.grid_columnconfigure(0, weight=1)
-        btn_frame.grid_columnconfigure(1, weight=1)
-
-        self.start_btn = ttk.Button(btn_frame, text="Start", command=self.start)
+        self.start_btn = ttk.Button(ctrl_frame, text="Start", command=self.start)
         self.start_btn.grid(row=0, column=0, sticky="ew", padx=(0,5))
-        self.stop_btn = ttk.Button(btn_frame, text="Stop", command=self.stop, state="disabled")
+        self.stop_btn  = ttk.Button(ctrl_frame, text="Stop",  command=self.stop, state="disabled")
         self.stop_btn.grid(row=0, column=1, sticky="ew", padx=(5,0))
 
-        # Sensor Values (initially empty)
-        self.sensors_frame = ttk.Frame(frm)
-        self.sensors_frame.grid(row=8, column=0, columnspan=2, sticky="ew", pady=(10, 5))
+        self.elapsed_lbl = ttk.Label(ctrl_frame, text="Elapsed: 0.0s")
+        self.elapsed_lbl.grid(row=1, column=0, columnspan=2, sticky="w", pady=(5,2))
 
-        # Progressbar
-        self.progress_var = tk.IntVar(value=0)
-        self.progress = ttk.Progressbar(frm, orient="horizontal", mode="determinate",
-                                        maximum=100, variable=self.progress_var)
-        self.progress.grid(row=9, column=0, columnspan=2, sticky="ew", pady=(2,5))
+        self.progress_var = tk.IntVar()
+        self.progress     = ttk.Progressbar(ctrl_frame, orient="horizontal",
+                                            mode="determinate", maximum=100,
+                                            variable=self.progress_var)
+        self.progress.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0,2))
 
-        #Status Label
-        self.status_lbl = ttk.Label(frm, text="—")
-        self.status_lbl.grid(row=10, column=0, columnspan=2, sticky="ew")
+        # — Area 4: Sensor display —
+        sensor_frame = ttk.LabelFrame(frm, text="Sensors Data", padding=8)
+        sensor_frame.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(0,5))
+        self.sensors_frame = sensor_frame  # user in create_sensor_label
 
-        # ScrolledText per eventuali messaggi di log generici
-        self.log_testo = tk.Text(frm, height=12, state="disabled")
-        self.log_testo.grid(row=11, column=0, columnspan=2, sticky="nsew")
+        # — Area 5: Log —
+        log_frame = ttk.LabelFrame(frm, text="Log", padding=8)
+        log_frame.grid(row=4, column=0, columnspan=2, sticky="nsew")
+        frm.rowconfigure(4, weight=1)
+        self.log_testo = tk.Text(log_frame, height=8, state="disabled")
+        self.log_testo.pack(fill="both", expand=True)
+
 
     def create_sensor_label(self, names):
         # Rimuovi vecchie label
@@ -185,11 +185,9 @@ class App(tk.Tk):
     def start(self):
         self.start_btn.config(state="disabled")
         self.stop_btn.config(state="normal")
-        # Pulisce log_testo e status_lbl/progress
         self.log_testo.configure(state="normal")
         self.log_testo.delete("1.0", tk.END)
         self.log_testo.configure(state="disabled")
-        self.status_lbl.config(text="—")
         self.progress_var.set(0)
 
         class Stream:
