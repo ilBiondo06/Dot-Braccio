@@ -46,4 +46,5 @@ class LivePlotter:
             ax.set_xlim(max(0, len(d['roll'])-self.max_points), len(d['roll']))
         self.fig.canvas.draw()
         self.fig.canvas.flush_events()
+        plt.pause(0.001)
 
