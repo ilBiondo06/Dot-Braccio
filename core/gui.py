@@ -1,13 +1,14 @@
 import threading
 import tkinter as tk
 from tkinter import ttk
-from registration import run, PAYLOAD_MODES, stop_flag
+from registration import run, PAYLOAD_MODES, stop_flag, cleanup_all
 import queue
 import re  # per estrarre percentuale e orientazione
 
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.title("Movella DOT Recorder GUI")
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(0, weight=1)
@@ -28,6 +29,8 @@ class App(tk.Tk):
         """
         while not self.log_queue.empty():
             txt = self.log_queue.get_nowait().strip()
+            if not txt:
+                continue
 
             #intercetta la lista sensori
             if txt.startswith("SENSOR_LIST:"):
@@ -68,6 +71,14 @@ class App(tk.Tk):
                 self.log_testo.see(tk.END)
 
         self.after(100, self._poll_log_queue)
+
+    
+
+    def _on_close(self):
+        stop_flag.set()
+        cleanup_all()
+        self.destroy()
+
 
     def _build(self):
         frm = ttk.Frame(self, padding=10)
@@ -220,6 +231,7 @@ class App(tk.Tk):
 
     def stop(self):
         stop_flag.set()
+        print("Registration stopped by user.")
         self.stop_btn.config(state="disabled")
         self.start_btn.config(state="normal")
 
@@ -228,6 +240,8 @@ class App(tk.Tk):
             run(*args)
         finally:
             # Quando termina, ripristino i bottoni
+            if not stop_flag.is_set():
+                self.log_queue.put("Registration completed successfully.")
             self.start_btn.config(state="normal")
             self.stop_btn.config(state="disabled")
 

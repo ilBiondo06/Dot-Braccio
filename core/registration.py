@@ -1,6 +1,5 @@
 # esempio di esecuzione: python3 registration.py --filter_profile General --payload_mode custom4 --duration 10 --output_rate 30 --show show
 #TODO inserire il send al server anche in show data
-#TODO sistemare start-stop-start (non vede i movella dopo)
 #TODO implementare live plot
 
 import argparse
@@ -15,6 +14,8 @@ from live_plotter import LivePlotter
 import requests
 import csv
 import queue
+
+_handler = None
 
 PAYLOAD_MODES = {
     'custom1': movelladot_pc_sdk.XsPayloadMode_CustomMode1,
@@ -517,6 +518,7 @@ if __name__ == "__main__":
 
 def run(filter_profile, payload_mode, duration, output_rate, show, send_flag, synch_flag, save_csv=True, filename=None, output_stream=sys.stdout):
     import builtins
+    global _handler
     orig_print = builtins.print
     def gui_print(*args, **kwargs):
         kwargs.pop('file', None)
@@ -524,7 +526,38 @@ def run(filter_profile, payload_mode, duration, output_rate, show, send_flag, sy
         output_stream.flush()
     builtins.print = gui_print
 
-    handler = XdpcHandler()
+    first = _handler is None
+    if first:
+        _handler = XdpcHandler()
+        if not initialize_and_connect(_handler):
+            builtins.print = orig_print
+            return
+    
+    configure_devices(_handler, filter_profile, output_rate, save_csv, filename)
+    if synch_flag and first:
+        if not synchronize_devices(_handler):
+            builtins.print = orig_print
+            return
+    elif not synch_flag:
+        print("Synchronization skipped by user request.")
+
+    start_measurement(_handler, PAYLOAD_MODES[payload_mode])
+    if duration is None:
+        if show:
+            show_data_indefinite(_handler, send_flag)
+        else:
+            while not stop_flag.is_set():
+                time.sleep(1)
+    else:
+        if show:
+            show_data(_handler, duration)
+        else:
+            time.sleep(duration)
+    stop_measurement_and_logging(_handler)
+
+    builtins.print = orig_print
+
+    """
     try:
         if not initialize_and_connect(handler): return
         configure_devices(handler, filter_profile, output_rate, save_csv, filename)
@@ -551,3 +584,11 @@ def run(filter_profile, payload_mode, duration, output_rate, show, send_flag, sy
     finally:
         reset_and_cleanup(handler)
         builtins.print = orig_print
+    """
+
+def cleanup_all():
+    """Chiamare una sola volta, alla chiusura della GUI."""
+    global _handler
+    if _handler:
+        reset_and_cleanup(_handler)
+        _handler = None
