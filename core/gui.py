@@ -42,7 +42,7 @@ class App(tk.Tk):
                 names = [n.strip() for n in names_str.split(",") if n.strip()]
                 self.create_sensor_label(names)
                 if not self._plotter_initialized:
-                    self.plotter = LivePlotter(names, max_points=100)
+                    self.plotter = LivePlotter(names, sampling_rate=self.sampling_rate)
                     self._plotter_initialized = True
                 continue
 
@@ -62,7 +62,6 @@ class App(tk.Tk):
                 self.update_sensors_value(nome, roll, pitch, yaw)
                 if self.plotter:
                     self.plotter.update(nome, roll, pitch, yaw)
-                    self.plotter.draw()
                 continue  # Non aggiungere questa riga al log
             
             # Parsing della barra di progresso e stato
@@ -222,12 +221,14 @@ class App(tk.Tk):
 
         save_csv_val = self.save_csv.get()
         filename_val = self.filename_entry.get().strip() or None
+        rate_val = int(self.rate.get())
+        self.sampling_rate = rate_val
 
         args = (
             self.filt.get(),
             self.mode.get(),
             dur_val,
-            int(self.rate.get()),
+            rate_val,
             self.show.get(),
             self.send_flag.get(),
             self.sync_flag.get(),
