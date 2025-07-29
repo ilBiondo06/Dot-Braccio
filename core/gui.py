@@ -4,6 +4,8 @@ from tkinter import ttk
 from registration import run, PAYLOAD_MODES, stop_flag, cleanup_all
 import queue
 import re  # per estrarre percentuale e orientazione
+from live_plotter import LivePlotter
+
 
 class App(tk.Tk):
     def __init__(self):
@@ -13,6 +15,8 @@ class App(tk.Tk):
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(0, weight=1)
         self.sensor_labels = {} # Dizionario per le label dei sensori
+        self.plotter = None
+        self._plotter_initialized = False
 
         # Coda per i messaggi di stato
         self.log_queue = queue.Queue()
@@ -37,6 +41,9 @@ class App(tk.Tk):
                 names_str = txt.split(":", 1)[1].strip()
                 names = [n.strip() for n in names_str.split(",") if n.strip()]
                 self.create_sensor_label(names)
+                if not self._plotter_initialized:
+                    self.plotter = LivePlotter(names, sampling_rate=self.sampling_rate)
+                    self._plotter_initialized = True
                 continue
 
             # intercetta il tempo trascorso
@@ -53,6 +60,8 @@ class App(tk.Tk):
             if m:
                 nome, roll, pitch, yaw = m.group(1), float(m.group(2)), float(m.group(3)), float(m.group(4))
                 self.update_sensors_value(nome, roll, pitch, yaw)
+                if self.plotter:
+                    self.plotter.update(nome, roll, pitch, yaw)
                 continue  # Non aggiungere questa riga al log
             
             # Parsing della barra di progresso e stato
@@ -212,12 +221,14 @@ class App(tk.Tk):
 
         save_csv_val = self.save_csv.get()
         filename_val = self.filename_entry.get().strip() or None
+        rate_val = int(self.rate.get())
+        self.sampling_rate = rate_val
 
         args = (
             self.filt.get(),
             self.mode.get(),
             dur_val,
-            int(self.rate.get()),
+            rate_val,
             self.show.get(),
             self.send_flag.get(),
             self.sync_flag.get(),
